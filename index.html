@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Simulator</title>
+    <style>
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #1a1a1a; color: #fff; overflow: hidden; }
+        canvas { display: block; }
+        #hud {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 16px;
+            color: #00ff00;
+            text-shadow: 1px 1px 2px black;
+            min-width: 250px;
+        }
+        #connection-status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .connected { background-color: #28a745; color: white; }
+        .disconnected { background-color: #dc3545; color: white; }
+        #goal-status {
+            position: absolute;
+            top: 50px;
+            right: 10px;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-weight: bold;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        .goal-reached { background-color: #28a745; color: white; }
+        .goal-not-reached { background-color: #ffc107; color: black; }
+    </style>
+</head>
+<body>
+    <div id="hud">Initializing...</div>
+    <div id="connection-status" class="disconnected">DISCONNECTED</div>
+    <div id="goal-status" class="goal-not-reached">GOAL: NOT REACHED</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // --- Basic Setup ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x87ceeb);
+        document.body.appendChild(renderer.domElement);
+
+        // --- Lighting ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(20, 30, 10);
+        scene.add(directionalLight);
+
+        // --- Floor with grid ---
+        const floorSize = 100;
+        const floorGeometry = new THREE.PlaneGeometry(floorSize, floorSize);
+        const floorMaterial = new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // Add grid lines
+        const gridHelper = new THREE.GridHelper(floorSize, 20, 0x000000, 0x000000);
+        gridHelper.position.y = 0.01;
+        scene.add(gridHelper);
+
+        // --- Robot ---
+        const robotGeometry = new THREE.BoxGeometry(2, 2, 4);
+        const defaultRobotColor = 0x007bff;
+        const collisionRobotColor = 0xff0000;
+        const robotMaterial = new THREE.MeshLambertMaterial({ color: defaultRobotColor });
+        const robot = new THREE.Mesh(robotGeometry, robotMaterial);
+        robot.position.y = 1;
+        scene.add(robot);
+
+        const directionIndicatorGeom = new THREE.ConeGeometry(0.5, 1, 16);
+        const directionIndicatorMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const directionIndicator = new THREE.Mesh(directionIndicatorGeom, directionIndicatorMat);
+        directionIndicator.position.z = 2.5;
+        directionIndicator.rotation.x = Math.PI / 2;
+        robot.add(directionIndicator);
+
+        // --- Camera Setup ---
+        camera.position.set(0, 15, 15);
+        camera.lookAt(robot.position);
+
+        // --- Obstacles ---
+        const obstacles = [];
+        const obstacleGeometry = new THREE.BoxGeometry(3, 4, 3);
+        const obstacleMaterial = new THREE.MeshLambertMaterial({ color: 0xff4500 });
+        for (let i = 0; i < 8; i++) {
+            const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
+            obstacle.position.set(
+                (Math.random() - 0.5) * (floorSize - 20),
+                2,
+                (Math.random() - 0.5) * (floorSize - 20)
+            );
+            obstacles.push(obstacle);
+            scene.add(obstacle);
+        }
+
+        // --- Goal Beacon ---
+        const goalGeometry = new THREE.CylinderGeometry(3, 3, 2, 16);
+        const goalMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.9 });
+        const goalBeacon = new THREE.Mesh(goalGeometry, goalMaterial);
+        goalBeacon.position.y = 1;
+        goalBeacon.visible = false;
+
+        // Add goal marker
+        const goalMarkerGeometry = new THREE.RingGeometry(2, 2.5, 32);
+        const goalMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+        const goalMarker = new THREE.Mesh(goalMarkerGeometry, goalMarkerMaterial);
+        goalMarker.rotation.x = -Math.PI / 2;
+        goalMarker.position.y = 0.1;
+        goalBeacon.add(goalMarker);
+        scene.add(goalBeacon);
+
+        // --- Path Line ---
+        const pathMaterial = new THREE.LineDashedMaterial({ color: 0xffa500, dashSize: 1, gapSize: 0.5 });
+        const pathPoints = [new THREE.Vector3(0, 0.1, 0), new THREE.Vector3(0, 0.1, 0)];
+        const pathGeometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
+        const pathLine = new THREE.Line(pathGeometry, pathMaterial);
+        scene.add(pathLine);
+        pathLine.visible = false;
+
+        // --- State Variables ---
+        let targetPosition = null;
+        let isMoving = false;
+        let collisionCount = 0;
+        let goalPosition = null;
+        let goalReached = false;
+        const hud = document.getElementById('hud');
+        const statusDiv = document.getElementById('connection-status');
+        const goalStatusDiv = document.getElementById('goal-status');
+        const moveSpeed = 0.1; // Slower, more realistic movement
+
+        // --- WebSocket Communication ---
+        let ws;
+        function connectWebSocket() {
+            ws = new WebSocket('ws://localhost:8765');
+            ws.onopen = () => { 
+                console.log('✅ Connected to server WebSocket'); 
+                statusDiv.textContent = 'CONNECTED'; 
+                statusDiv.className = 'connected'; 
+            };
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('Received command:', data);
+                    
+                    switch (data.command) {
+                        case "move_rel":
+                            console.log("Moving relative - turn:", data.turn, "distance:", data.distance);
+                            const angleRad = (data.turn || 0) * (Math.PI / 180);
+                            robot.rotation.y -= angleRad;
+                            const distance = data.distance || 0;
+                            const dx = Math.sin(robot.rotation.y) * distance;
+                            const dz = Math.cos(robot.rotation.y) * distance;
+                            targetPosition = new THREE.Vector3(
+                                robot.position.x + dx,
+                                robot.position.y,
+                                robot.position.z + dz
+                            );
+                            isMoving = true;
+                            break;
+                        case "move":
+                            console.log("Moving to - x:", data.x, "z:", data.z);
+                            
+                            // Face the target direction before moving
+                            const targetVec = new THREE.Vector3(data.x, robot.position.y, data.z);
+                            const directionVec = targetVec.clone().sub(robot.position);
+                            if (directionVec.lengthSq() > 0.001) {
+                                const targetAngle = Math.atan2(directionVec.x, directionVec.z);
+                                robot.rotation.y = targetAngle;
+                            }
+
+                            targetPosition = new THREE.Vector3(data.x, robot.position.y, data.z);
+                            isMoving = true;
+                            break;
+                        case "goal":
+                            console.log("Setting goal - x:", data.x, "z:", data.z);
+                            setGoal(data.x, data.z);
+                            break;
+                        case "stop":
+                            console.log("Stopping");
+                            isMoving = false;
+                            targetPosition = null;
+                            break;
+                    }
+                } catch (error) {
+                    console.error('Error parsing message:', error);
+                }
+            };
+            ws.onclose = () => { 
+                console.log('WebSocket disconnected. Reconnecting...'); 
+                statusDiv.textContent = 'DISCONNECTED'; 
+                statusDiv.className = 'disconnected'; 
+                setTimeout(connectWebSocket, 3000); 
+            };
+            ws.onerror = (error) => { 
+                console.error('WebSocket error:', error); 
+                if (ws) ws.close(); 
+            };
+        }
+        
+        function setGoal(x, z) {
+            goalPosition = new THREE.Vector3(x, 0, z);
+            goalBeacon.position.set(x, 1, z);
+            goalBeacon.visible = true;
+            goalReached = false;
+            goalStatusDiv.textContent = `GOAL: (${x}, ${z}) - NOT REACHED`;
+            goalStatusDiv.className = 'goal-not-reached';
+            
+            // Update path line
+            const points = [
+                new THREE.Vector3(robot.position.x, 0.1, robot.position.z),
+                new THREE.Vector3(x, 0.1, z)
+            ];
+            pathLine.geometry.setFromPoints(points);
+            pathLine.computeLineDistances();
+            pathLine.visible = true;
+        }
+
+        function checkGoalReached() {
+            if (!goalPosition) return false;
+            
+            const distance = robot.position.distanceTo(goalPosition);
+            if (distance < 2.0 && !goalReached) { // 2 units tolerance
+                goalReached = true;
+                goalStatusDiv.textContent = 'GOAL: REACHED! 🎉';
+                goalStatusDiv.className = 'goal-reached';
+                
+                // Send goal reached notification
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ 
+                        type: 'goal_reached',
+                        position: { x: robot.position.x, z: robot.position.z }
+                    }));
+                }
+                return true;
+            }
+            return false;
+        }
+
+        function updateHUD() {
+            const yawDeg = (robot.rotation.y * 180 / Math.PI).toFixed(1);
+            const goalText = goalPosition ? 
+                ` | Goal: (${goalPosition.x.toFixed(1)}, ${goalPosition.z.toFixed(1)})` : '';
+            const reachedText = goalReached ? ' REACHED' : '';
+            
+            hud.textContent = `Pos: (${robot.position.x.toFixed(1)}, ${robot.position.z.toFixed(1)}) | Yaw: ${yawDeg}°${goalText}${reachedText} | Collisions: ${collisionCount}`;
+        }
+        
+        function resetSimulator() {
+            robot.position.set(0, 1, 0);
+            robot.rotation.set(0, 0, 0);
+            robotMaterial.color.setHex(defaultRobotColor);
+            isMoving = false;
+            targetPosition = null;
+            goalPosition = null;
+            goalReached = false;
+            collisionCount = 0;
+            pathLine.visible = false;
+            goalBeacon.visible = false;
+            goalStatusDiv.textContent = 'GOAL: NOT SET';
+            goalStatusDiv.className = 'goal-not-reached';
+            updateHUD();
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Smooth movement towards target
+            if (isMoving && targetPosition) {
+                const direction = targetPosition.clone().sub(robot.position);
+                const distance = direction.length();
+                
+                if (distance > moveSpeed) {
+                    direction.normalize().multiplyScalar(moveSpeed);
+                    robot.position.add(direction);
+                } else {
+                    robot.position.copy(targetPosition);
+                    isMoving = false;
+                    targetPosition = null;
+                    console.log("Movement completed");
+                }
+            }
+
+            // Collision detection
+            const robotBox = new THREE.Box3().setFromObject(robot);
+            let collisionDetected = false;
+            
+            for (const obstacle of obstacles) {
+                if (robotBox.intersectsBox(new THREE.Box3().setFromObject(obstacle))) {
+                    collisionDetected = true;
+                    break;
+                }
+            }
+            
+            if (collisionDetected) {
+                if (robotMaterial.color.getHex() !== collisionRobotColor) {
+                    robotMaterial.color.setHex(collisionRobotColor);
+                    isMoving = false;
+                    collisionCount++;
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ 
+                            type: 'collision', 
+                            collision: true,
+                            position: { x: robot.position.x, z: robot.position.z }
+                        }));
+                    }
+                }
+            } else {
+                if (robotMaterial.color.getHex() !== defaultRobotColor) {
+                    robotMaterial.color.setHex(defaultRobotColor);
+                }
+            }
+
+            // Update path line if goal is set
+            if (goalPosition && pathLine.visible) {
+                pathLine.geometry.attributes.position.setXYZ(0, robot.position.x, 0.1, robot.position.z);
+                pathLine.geometry.attributes.position.needsUpdate = true;
+                pathLine.computeLineDistances();
+            }
+
+            // Check if goal is reached
+            checkGoalReached();
+            updateHUD();
+
+            // Camera follows robot
+            const cameraOffset = new THREE.Vector3(
+                Math.sin(robot.rotation.y) * -15,
+                20,
+                Math.cos(robot.rotation.y) * -15
+            );
+            camera.position.copy(robot.position.clone().add(cameraOffset));
+            camera.lookAt(robot.position);
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Initialize
+        connectWebSocket();
+        animate();
+        
+        window.addEventListener('resize', () => { 
+            camera.aspect = window.innerWidth / window.innerHeight; 
+            camera.updateProjectionMatrix(); 
+            renderer.setSize(window.innerWidth, window.innerHeight); 
+        });
+
+        // Add reset functionality for testing
+        window.resetSim = resetSimulator;
+        console.log("Type 'resetSim()' in console to reset simulator");
+    </script>
+</body>
+</html>
