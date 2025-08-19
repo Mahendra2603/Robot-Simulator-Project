@@ -73,30 +73,4 @@ POST	/move_rel	Move robot relative distance & turn	{"turn": 90, "distance": 10}
 POST	/move	Move robot to absolute position	{"x": 20, "z": 15}
 POST	/goal	Set goal marker in simulator	{"x": 30, "z": 30}
 POST	/stop	Stop robot movement	{}
-📦 Dependencies
-
-All Python dependencies are listed in requirements.txt:
-
-Flask
-
-requests
-
-opencv-python
-
-numpy
-
-Pillow
-
-Install via:
-
-pip install -r requirements.txt
-
-🛠️ Future Improvements
-
-Add multiple robots in the simulation.
-
-Implement advanced path-planning algorithms (A*, Dijkstra).
-
-Extend vision module with deep learning models.
-
-Support for joystick / gamepad control.
+k / gamepad control.
