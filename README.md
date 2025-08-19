@@ -1,76 +1,161 @@
-# 🤖 Robot Control Simulator
+Robot Controller – Autonomous Simulation
+Overview
 
-The **Robot Control Simulator** provides a simple robot control environment with a **3D visualizer**, a **Flask API server**, and a **client API**.  
-It allows you to send commands to a simulated robot, visualize its movements, detect collisions, and reach goals — all in your web browser.
+This project provides an autonomous robot controller with a web-based simulator. The robot can move along a pre-defined path, set goals, avoid collisions, and interact in real-time via WebSocket. The system uses:
 
----
+Flask API: Exposes endpoints for commands like move, move relative, stop, and goal setting.
 
-## 🚀 Features
+WebSocket Server: Communicates live commands to the simulator.
 
-- **3D Simulator**  
-  Web-based simulator built with **Three.js** to visualize the robot, obstacles, and goals.  
+Browser-based Simulator (index.html): Visualizes the robot and executes movement commands.
 
-- **API Server**  
-  A **Flask server** exposing REST API endpoints for robot control.  
+Main Controller (main_controller.py): Computes the robot path and sends commands via the API.
 
-- **WebSocket Communication**  
-  Real-time communication between the server and simulator for instant command execution & status updates.  
+API Client (api_client.py): Wrapper for sending requests to the Flask API.
 
-- **Client Libraries**  
-  - `api_client.py` → Python wrapper for the API  
-  - `main_controller.py` → High-level controller script to demonstrate goal setting and movement  
+Folder Structure
+robot_controller/
+├── sim-1/                # Simulator code (browser-based)
+│   ├── index.html        # Simulator interface
+│   └── server.py         # Flask + WebSocket server
+├── api_client.py         # API wrapper for robot commands
+├── vision.py             # (Optional) Vision processing code
+├── main_controller.py    # Main robot path execution script
+└── requirements.txt      # Python dependencies
 
-- **Vision Module**  
-  Basic computer vision (`vision.py`) using **OpenCV** & **PIL** to detect obstacles and goals by color.  
+Dependencies
 
----
+Make sure Python 3.11+ is installed. Install dependencies:
 
-## 🏗️ System Architecture
-
-- **server.py** → Flask app running REST API + WebSocket server.  
-- **index.html** → Frontend 3D simulator (Three.js).  
-- **api_client.py** → Python wrapper for REST API.  
-- **main_controller.py** → Example script to command the robot.  
-- **vision.py** → Image processing utilities.  
-- **requirements.txt** → Required Python dependencies.  
-
----
-
-## ⚙️ Installation & Setup
-
-### 1️⃣ Clone the repository
-```bash
-git clone <repository_url>
-cd <repository_name>
-2️⃣ Install dependencies
-It is recommended to use a virtual environment.
-
-bash
-Copy
-Edit
 pip install -r requirements.txt
-3️⃣ Start the server
-bash
-Copy
-Edit
+
+
+requirements.txt
+
+Flask>=2.3.2
+websockets>=11.0.3
+requests>=2.32.0
+
+
+Optional:
+
+numpy (used in main_controller for calculations)
+
+matplotlib (if you want plotting/debugging)
+
+Browser: Chrome/Firefox to open index.html simulator
+
+Running the Project
+
+Start the Flask + WebSocket server
+
+cd sim-1
 python server.py
-You should see logs indicating Flask API and WebSocket are running.
 
-4️⃣ Open the simulator
-Open index.html in a modern browser (Chrome, Firefox).
-You should see the connection status as CONNECTED.
 
-5️⃣ Run the controller
-bash
-Copy
-Edit
+WebSocket runs on: ws://localhost:8765
+
+Flask API runs on: http://127.0.0.1:5000
+
+Confirm in console:
+
+✅ WebSocket running on ws://localhost:8765
+✅ Flask API running on http://127.0.0.1:5000
+
+
+Open the simulator
+
+Open sim-1/index.html in your browser.
+
+In the browser console, confirm:
+
+✅ Connected to server WebSocket
+
+
+Run the main controller
+
 python main_controller.py
-The robot will be commanded to move to (30, 30) and animate in the simulator.
 
-📡 API Endpoints
-Method	Endpoint	Description	Example JSON Body
-POST	/move_rel	Move robot relative distance & turn	{"turn": 90, "distance": 10}
-POST	/move	Move robot to absolute position	{"x": 20, "z": 15}
-POST	/goal	Set goal marker in simulator	{"x": 30, "z": 30}
-POST	/stop	Stop robot movement	{}
-k / gamepad control.
+
+The robot will follow a pre-defined path towards the goal.
+
+Live updates will be visible in the browser simulator.
+
+The console will show robot pose, commands, and distance to goal.
+
+Available API Endpoints
+Endpoint	Method	Description
+/move	POST	Move robot to absolute position { "x": float, "z": float }
+/move_rel	POST	Move robot relative { "turn": float, "distance": float }
+/goal	POST	Set goal position { "x": float, "z": float }
+/stop	POST	Stop robot immediately
+/collisions	GET	Get number of collisions detected
+/reset	POST	Reset collision count and broadcast reset
+Main Controller
+
+Computes the robot path automatically.
+
+Sends turn + forward commands to the robot.
+
+Ensures the robot moves towards the goal while avoiding collisions.
+
+Can be customized in main_controller.py for different goals or paths.
+
+Simulator Behavior
+
+Uses WebSocket to receive commands from Flask API.
+
+Commands include:
+
+move_rel → relative motion
+
+move → absolute coordinates
+
+goal → target goal
+
+stop → stop robot
+
+Robot movement and collisions are visualized in real-time.
+
+Troubleshooting
+
+Error: No simulators connected
+
+Make sure index.html is open in the browser.
+
+Confirm WebSocket connection: ws://localhost:8765.
+
+Ensure server.py is running before opening the simulator.
+
+Commands not executing
+
+Ensure command names in server.py match simulator JS:
+
+"move_rel", "move", "goal", "stop".
+
+WebSocket Errors
+
+If RuntimeError: no running event loop occurs:
+
+Use the threaded asyncio event loop implementation in server.py.
+
+Make sure broadcast() uses the correct loop:
+
+asyncio.run_coroutine_threadsafe(ws.send(msg_json), asyncio.get_event_loop())
+
+
+Distance to goal not decreasing
+
+Confirm main_controller.py uses correct goal coordinates.
+
+Turn angle and step size may need tuning to move efficiently.
+
+Notes / Recommendations
+
+You can predefine paths and obstacles in main_controller.py.
+
+Vision processing can be implemented in vision.py for obstacle detection.
+
+Multiple simulators can connect simultaneously to server.py.
+
+The simulator is browser-based: works best in Chrome or Edge.
